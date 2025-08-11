@@ -1,0 +1,6 @@
+Flask
+requests
+SQLAlchemy
+PyMySQL
+pandas
+gunicorn

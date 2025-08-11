@@ -73,7 +73,7 @@ summary_service = SummaryService(db)
 
 # --- 背景任務 ---
 def run_pruner():
-    """定期清理舊資料的背景任務"""
+    """定期清理舊資料的背景���務"""
     while True:
         db.prune_old_data(days_to_keep=60)
         # 睡 24 小時

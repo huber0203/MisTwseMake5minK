@@ -60,11 +60,19 @@ class SummaryService:
         response["最新成交價"] = ticks_df['price'].iloc[-1]
         response["當日成交量"] = int(ticks_df['vol'].sum())
 
-        ohlc_5m = ticks_df['price'].resample('5T').ohlc()
-        vol_5m = ticks_df['vol'].resample('5T').sum()
+        # --- 核心修改開始 ---
+
+        # 1. 產生一個完整的 5 分鐘時間軸，從第一筆成交到最後一筆
+        start_time = ticks_df.index.min().floor('5T')
+        end_time = ticks_df.index.max().floor('5T')
+        full_time_index = pd.date_range(start=start_time, end=end_time, freq='5T')
+
+        # 2. 重新取樣，並將其對齊到完整的時間軸上
+        ohlc_5m = ticks_df['price'].resample('5T').ohlc().reindex(full_time_index)
         
         ticks_df['value'] = ticks_df['price'] * ticks_df['vol']
-        vwap_5m = (ticks_df['value'].resample('5T').sum() / vol_5m).dropna()
+        vol_5m = ticks_df['vol'].resample('5T').sum()
+        vwap_5m = (ticks_df['value'].resample('5T').sum() / vol_5m).reindex(full_time_index)
 
         def estimate_direction(row):
             if row['best_ask'] and row['price'] >= row['best_ask']: return 'B'
@@ -72,15 +80,39 @@ class SummaryService:
             return 'N'
         
         ticks_df['direction'] = ticks_df.apply(estimate_direction, axis=1)
-        buy_vol = ticks_df[ticks_df['direction'] == 'B']['vol'].resample('5T').sum().fillna(0)
-        sell_vol = ticks_df[ticks_df['direction'] == 'S']['vol'].resample('5T').sum().fillna(0)
+        # 對齊買賣量，空缺值填 0
+        buy_vol = ticks_df[ticks_df['direction'] == 'B']['vol'].resample('5T').sum().reindex(full_time_index, fill_value=0)
+        sell_vol = ticks_df[ticks_df['direction'] == 'S']['vol'].resample('5T').sum().reindex(full_time_index, fill_value=0)
         
-        for idx, row in ohlc_5m.dropna().iterrows():
+        # 3. 迭代完整的時間軸，填補空缺
+        last_close = meta_data.get("day_open") # 初始值設為開盤價
+
+        for idx in full_time_index:
             ts_str = idx.strftime('%H:%M')
-            response["即時5分"].append(f"{ts_str},O:{row['open']},H:{row['high']},L:{row['low']},C:{row['close']}")
-            response["推估五分買賣量"].append(f"{ts_str},B:{int(buy_vol.get(idx, 0))},S:{int(sell_vol.get(idx, 0))}")
+            row = ohlc_5m.loc[idx]
+            
+            # 處理推估買賣量 (因為已填0，可直接取用)
+            b_vol = int(buy_vol.loc[idx])
+            s_vol = int(sell_vol.loc[idx])
+            response["推估五分買賣量"].append(f"{ts_str},B:{b_vol},S:{s_vol}")
+
+            # 處理 5分K
+            if pd.isna(row['open']):
+                # 這是一個沒有成交的區間
+                o = h = l = last_close
+                c = '-'
+                response["即時5分"].append(f"{ts_str},O:{o},H:{h},L:{l},C:{c}")
+            else:
+                # 這是一個有成交的區間
+                o, h, l, c = row['open'], row['high'], row['low'], row['close']
+                response["即時5分"].append(f"{ts_str},O:{o},H:{h},L:{l},C:{c}")
+                last_close = c # 更新最後收盤價
+
+            # 處理均價 (只有在有成交時才加入)
+            vwap_val = vwap_5m.get(idx)
+            if pd.notna(vwap_val):
+                response["均價"].append(f"{ts_str},{vwap_val:.2f}")
         
-        for idx, val in vwap_5m.items():
-            response["均價"].append(f"{idx.strftime('%H:%M')},{val:.2f}")
+        # --- 核心修改結束 ---
 
         return response

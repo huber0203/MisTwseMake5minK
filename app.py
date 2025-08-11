@@ -58,10 +58,10 @@ def get_summary():
     symbol = request.args.get('symbol')
     if not symbol:
         raise BadRequest("Query parameter 'symbol' is required.")
-    
+
     # The user's spec uses pure numbers for symbols, so we strip any .TW suffix
     clean_symbol = symbol.split('.')[0]
-    
+
     summary_data = summary_service.get_summary(clean_symbol)
     return jsonify(summary_data)
 

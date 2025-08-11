@@ -26,13 +26,14 @@ def is_trading_hours():
 
 class VshapeDetector:
     """V型反轉偵測器"""
-    def __init__(self):
+    def __init__(self, summary_service):
+        self.summary_service = summary_service
         # 儲存格式: { 'symbol': deque([{'ts': '11:05', 'low': 58.4}, ...], maxlen=3) }
         self.recent_lows = {}
         # 儲存格式: { 'symbol': '11:15' } # 記錄上次發送V轉通知的時間點
         self.last_notification_time = {}
 
-    def check_and_notify(self, symbol, name, ohlc_df, summary_data):
+    def check_and_notify(self, symbol, name, ohlc_df):
         if ohlc_df.shape[0] < 3: return # 需要至少三根K棒才能判斷
 
         # 初始化該股票的deque
@@ -55,21 +56,22 @@ class VshapeDetector:
                 # 檢查是否已為此時間點發送過通知
                 if self.last_notification_time.get(symbol) != p3['ts']:
                     print(f"*** 偵測到V型反轉: {name} at {p3['ts']} ***")
-                    self._send_notification(symbol, name, p1, p2, p3, summary_data)
+                    # *** 核心修改：傳入 symbol 以便獲取完整 summary ***
+                    self._send_notification(symbol, name, p1, p2, p3)
                     self.last_notification_time[symbol] = p3['ts']
 
-    def _send_notification(self, symbol, name, p1, p2, p3, summary):
+    def _send_notification(self, symbol, name, p1, p2, p3):
+        # *** 核心修改：在發送前，先呼叫 SummaryService 獲取最完整的即時資料 ***
+        full_summary = self.summary_service.get_summary(symbol)
+
         payload = {
-            "股票代號": symbol,
-            "股票名稱": name,
-            "時間": f"{p1['ts']}-{p3['ts']}",
-            "價格": f"{p1['low']} > {p2['low']} > {p3['low']}",
-            "最新成交價": to_float(summary.get("z")),
-            "當日開盤價": to_float(summary.get("o")),
-            "當日最高價": to_float(summary.get("h")),
-            "當日最低價": to_float(summary.get("l")),
-            "昨日收盤價": to_float(summary.get("y")),
-            "當日成交量": int(to_float(summary.get("v")) or 0)
+            "v_shape_signal": {
+                "股票代號": symbol,
+                "股票名稱": name,
+                "時間": f"{p1['ts']}-{p3['ts']}",
+                "價格": f"{p1['low']} > {p2['low']} > {p3['low']}",
+            },
+            "full_summary": full_summary # 將完整的 summary 物件打包進 payload
         }
         try:
             res = requests.post(N8N_WEBHOOK_URL, json=payload, timeout=5)
@@ -80,13 +82,15 @@ class VshapeDetector:
 
 
 class Poller:
-    def __init__(self, config, db):
+    def __init__(self, config, db, summary_service):
         self.config = config
         self.db = db
+        self.summary_service = summary_service
         self.session = requests.Session()
         self.session.headers.update({'User-Agent': 'Mozilla/5.0'})
         self.MIS_URL_BASE = "https://mis.twse.com.tw/stock/api/getStockInfo.jsp"
-        self.v_shape_detector = VshapeDetector()
+        # *** 核心修改：將 summary_service 傳遞給偵測器 ***
+        self.v_shape_detector = VshapeDetector(self.summary_service)
 
     def run(self):
         while True:
@@ -178,4 +182,5 @@ class Poller:
             ticks_df = self._get_ticks_for_today(symbol)
             if not ticks_df.empty:
                 ohlc_df = ticks_df['price'].resample('5T').ohlc().dropna()
-                self.v_shape_detector.check_and_notify(symbol, name, ohlc_df, msg)
+                # *** 核心修改：不再傳遞 msg，因為偵測器會自己去拿最新資料 ***
+                self.v_shape_detector.check_and_notify(symbol, name, ohlc_df)

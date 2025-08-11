@@ -14,12 +14,14 @@ class Poller:
 
     def run(self):
         while True:
-            if not self.config.get('enabled') or not self.config.get('symbols'):
+            # 在迴圈開始時就檢查一次，如果 symbols 是空的，就沒必要繼續執行
+            symbols_str = self.config.get('symbols', '').strip()
+            if not self.config.get('enabled') or not symbols_str:
                 time.sleep(60)
                 continue
             
             try:
-                self.poll_and_save(self.config['symbols'])
+                self.poll_and_save(symbols_str)
             except Exception as e:
                 print(f"輪詢迴圈發生錯誤 (An error occurred in the polling loop): {e}")
             
@@ -33,27 +35,26 @@ class Poller:
             res = self.session.get(full_url, timeout=4)
             res.raise_for_status()
             data = res.json()
+
+            # --- 詳細日誌 ---
+            print("\n=======================================")
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] --- 正在請求的 URL ---")
+            print(full_url)
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] --- 收到來自 MIS API 的原始回應 ---")
+            print(json.dumps(data, indent=2, ensure_ascii=False))
+            print("--- 原始回應結束 ---")
+            # --- 日誌結束 ---
+
         except (requests.RequestException, ValueError) as e:
             print(f"無法獲取 MIS 資料 (Failed to fetch or parse MIS data): {e}")
             return
 
-        if 'msgArray' not in data or not data['msgArray']: return
+        if 'msgArray' not in data or not data['msgArray']: 
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] API 回應中沒有 'msgArray' 或為空，跳過處理。")
+            return
 
         ticks_to_insert, meta_to_upsert = [], []
         today_date = get_today_date_str()
-        
-        # --- 收斂日誌：只處理第一個股票的資訊 ---
-        summary_log = ""
-        if data['msgArray']:
-            first_stock = data['msgArray'][0]
-            name = first_stock.get('n', 'N/A')
-            o = first_stock.get('o', '-')
-            h = first_stock.get('h', '-')
-            l = first_stock.get('l', '-')
-            z = first_stock.get('z', '-')
-            y = first_stock.get('y', '-')
-            summary_log = f"[{name}] 開:{o} 高:{h} 低:{l} 收:{z} (昨收:{y})"
-        # --- 日誌收斂結束 ---
 
         for msg in data['msgArray']:
             code = (msg.get("c") or "").strip()
@@ -79,4 +80,5 @@ class Poller:
         if meta_to_upsert: self.db.bulk_upsert_daily_meta(meta_to_upsert)
         if ticks_to_insert: self.db.bulk_upsert_ticks(ticks_to_insert)
         
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] {summary_log} | DB Write: {len(meta_to_upsert)} meta, {len(ticks_to_insert)} ticks.")
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] Polled {len(data['msgArray'])} symbols. Upserted {len(meta_to_upsert)} meta, {len(ticks_to_insert)} ticks.")
+        print("=======================================\n")

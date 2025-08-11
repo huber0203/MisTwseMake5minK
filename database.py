@@ -1,6 +1,7 @@
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.exc import SQLAlchemyError
+from datetime import datetime, timedelta
 
 class Database:
     def __init__(self, db_url):
@@ -56,4 +57,28 @@ class Database:
                 session.commit()
             except SQLAlchemyError as e:
                 print(f"Error in bulk_upsert_ticks: {e}")
+                session.rollback()
+
+    def prune_old_data(self, days_to_keep=60):
+        """刪除超過指定天數的舊資料"""
+        cutoff_date = datetime.now() - timedelta(days=days_to_keep)
+        cutoff_date_str = cutoff_date.strftime('%Y-%m-%d')
+        cutoff_ts = int(cutoff_date.timestamp())
+
+        print(f"開始清理 {days_to_keep} 天前的舊資料 (cutoff: {cutoff_date_str})...")
+        
+        with self.get_session() as session:
+            try:
+                # 刪除舊的 ticks
+                ticks_stmt = text("DELETE FROM ticks WHERE ts_sec < :cutoff_ts")
+                ticks_res = session.execute(ticks_stmt, {"cutoff_ts": cutoff_ts})
+                
+                # 刪除舊的 daily_meta
+                meta_stmt = text("DELETE FROM daily_meta WHERE trade_date < :cutoff_date_str")
+                meta_res = session.execute(meta_stmt, {"cutoff_date_str": cutoff_date_str})
+                
+                session.commit()
+                print(f"清理完成。刪除了 {ticks_res.rowcount} 筆 tick 資料和 {meta_res.rowcount} 筆 meta 資料。")
+            except SQLAlchemyError as e:
+                print(f"清理舊資料時發生錯誤: {e}")
                 session.rollback()

@@ -2,7 +2,7 @@ import os
 import sys
 import threading
 import uvicorn
-from fastapi import FastAPI, HTTPException, Header, Depends  # <--- 在這裡加上 Depends
+from fastapi import FastAPI, HTTPException, Header, Depends
 from pydantic import BaseModel, Field
 from typing import Optional
 from dotenv import load_dotenv
@@ -18,8 +18,23 @@ from database import Database
 from poller import Poller
 from services import SummaryService
 
-# 讀取 .env 檔案中的環境變數
+# 讀取 .env 檔案中的環境變數 (主要用於本機)
 load_dotenv()
+
+# --- 新增：啟動時打印環境變數以供除錯 ---
+print("\n================== DEBUG: CHECKING ENVIRONMENT VARIABLES ==================")
+# 為了安全，我們不直接打印密碼，只檢查是否存在
+db_url_set = 'YES' if os.environ.get('DATABASE_URL') else 'NO'
+admin_token_set = 'YES' if os.environ.get('ADMIN_TOKEN') else 'NO'
+# 我們最關心的 POLLER_SYMBOLS，直接打印出它的值
+poller_symbols_value = os.environ.get('POLLER_SYMBOLS', '!!! POLLER_SYMBOLS NOT FOUND !!!')
+
+print(f"DATABASE_URL is set: {db_url_set}")
+print(f"ADMIN_TOKEN is set: {admin_token_set}")
+print(f"POLLER_SYMBOLS value: '{poller_symbols_value}'") # 用引號包起來，方便看清前後是否有空格
+print("=========================================================================\n")
+# --- 除錯日誌結束 ---
+
 
 # --- FastAPI App 初始化 ---
 app = FastAPI(
@@ -31,7 +46,7 @@ app = FastAPI(
 # --- 全域狀態與設定 ---
 poller_config = {
     'enabled': os.environ.get('POLLER_ENABLED', 'true').lower() == 'true',
-    'symbols': os.environ.get('POLLER_SYMBOLS', 'tse_2330.tw'),
+    'symbols': os.environ.get('POLLER_SYMBOLS', ''), # 如果沒找到，預設為空字串
     'poll_seconds': int(os.environ.get('POLLER_SECONDS', 5)),
 }
 ADMIN_TOKEN = os.environ.get('ADMIN_TOKEN', 'your-secret-token')
@@ -40,7 +55,6 @@ ADMIN_TOKEN = os.environ.get('ADMIN_TOKEN', 'your-secret-token')
 db_url = os.environ.get('DATABASE_URL')
 if not db_url:
     print("錯誤：DATABASE_URL 環境變數未設定。")
-    print("請建立一個 .env 檔案，並在其中加入 DATABASE_URL='...'")
     sys.exit(1)
 
 db = Database(db_url)

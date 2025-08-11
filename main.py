@@ -1,11 +1,13 @@
 import os
 import sys
 import threading
+import time
 import uvicorn
 from fastapi import FastAPI, HTTPException, Header, Depends
 from pydantic import BaseModel, Field
 from typing import Optional
 from dotenv import load_dotenv
+from datetime import datetime
 
 # --- GPS 導航：確保 Python 能找到同資料夾的檔案 ---
 current_path = os.path.dirname(os.path.abspath(__file__))
@@ -35,9 +37,15 @@ print("=========================================================================
 
 # --- FastAPI App 初始化 ---
 app = FastAPI(
-    title="Zeabur MIS Poller (Clean)",
-    description="使用 FastAPI 運行的台灣股市 MIS 輪詢服務",
-    version="5.0.0"
+    title="Zeabur MIS Poller (v6)",
+    description="""
+台灣股市 MIS 輪詢服務，具備以下功能：
+- `/`: 健康檢查
+- `/config`: 動態更新輪詢設定
+- `/summary`: 查詢指定股票**當日**的即時行情
+- `/summary/historical`: 查詢指定股票在**特定歷史日期**的行情
+    """,
+    version="6.0.0"
 )
 
 # --- 關鍵修正：將逗號分隔的 symbols 轉換為用 | 分隔 ---
@@ -64,12 +72,23 @@ db = Database(db_url)
 summary_service = SummaryService(db)
 
 # --- 背景任務 ---
+def run_pruner():
+    """定期清理舊資料的背景任務"""
+    while True:
+        db.prune_old_data(days_to_keep=60)
+        # 睡 24 小時
+        time.sleep(86400)
+
 @app.on_event("startup")
 def startup_event():
     poller = Poller(poller_config, db)
     poller_thread = threading.Thread(target=poller.run, daemon=True)
     poller_thread.start()
     print("背景輪詢器已啟動。")
+
+    pruner_thread = threading.Thread(target=run_pruner, daemon=True)
+    pruner_thread.start()
+    print("背景資料清理器已啟動 (每 24 小時執行一次)。")
 
 # --- API 端點 (Endpoints) ---
 class ConfigModel(BaseModel):
@@ -103,6 +122,22 @@ def get_summary(symbol: str):
         raise HTTPException(status_code=400, detail="Query parameter 'symbol' is required.")
     clean_symbol = symbol.split('.')[0]
     summary_data = summary_service.get_summary(clean_symbol)
+    return summary_data
+
+@app.get("/summary/historical")
+def get_historical_summary(symbol: str, date: str):
+    """查詢歷史日期的行情摘要"""
+    if not symbol or not date:
+        raise HTTPException(status_code=400, detail="Query parameters 'symbol' and 'date' are required.")
+    
+    try:
+        # 驗證日期格式
+        datetime.strptime(date, '%Y-%m-%d')
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Please use YYYY-MM-DD.")
+
+    clean_symbol = symbol.split('.')[0]
+    summary_data = summary_service.get_historical_summary(clean_symbol, date)
     return summary_data
 
 # --- 本機測試啟動點 ---

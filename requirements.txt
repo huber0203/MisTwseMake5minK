@@ -1,7 +1,0 @@
-fastapi
-uvicorn[standard]
-sqlalchemy
-pymysql
-pandas
-requests
-python-dotenv

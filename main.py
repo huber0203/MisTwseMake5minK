@@ -37,7 +37,7 @@ print("=========================================================================
 
 # --- FastAPI App 初始化 ---
 app = FastAPI(
-    title="Zeabur MIS Poller (v6)",
+    title="Zeabur MIS Poller (v7)",
     description="""
 台灣股市 MIS 輪詢服務，具備以下功能：
 - `/`: 健康檢查
@@ -45,7 +45,7 @@ app = FastAPI(
 - `/summary`: 查詢指定股票**當日**的即時行情
 - `/summary/historical`: 查詢指定股票在**特定歷史日期**的行情
     """,
-    version="6.0.0"
+    version="7.0.0"
 )
 
 # --- 關鍵修正：將逗號分隔的 symbols 轉換為用 | 分隔 ---
@@ -73,7 +73,7 @@ summary_service = SummaryService(db)
 
 # --- 背景任務 ---
 def run_pruner():
-    """定期清理舊資料的背景���務"""
+    """定期清理舊資料的背景任務"""
     while True:
         db.prune_old_data(days_to_keep=60)
         # 睡 24 小時
@@ -81,7 +81,8 @@ def run_pruner():
 
 @app.on_event("startup")
 def startup_event():
-    poller = Poller(poller_config, db)
+    # *** 核心修改：將 summary_service 注入 Poller ***
+    poller = Poller(poller_config, db, summary_service)
     poller_thread = threading.Thread(target=poller.run, daemon=True)
     poller_thread.start()
     print("背景輪詢器已啟動。")

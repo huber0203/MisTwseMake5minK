@@ -1,6 +1,7 @@
-Flask
-requests
-SQLAlchemy
-PyMySQL
+fastapi
+uvicorn[standard]
+sqlalchemy
+pymysql
 pandas
-gunicorn
+requests
+python-dotenv

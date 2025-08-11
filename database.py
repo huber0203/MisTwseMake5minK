@@ -7,19 +7,16 @@ class Database:
         try:
             self.engine = create_engine(db_url, pool_recycle=3600, echo=False)
             self.Session = sessionmaker(bind=self.engine)
-            print("Database connection successful.")
+            print("資料庫連線成功 (Database connection successful).")
         except Exception as e:
-            print(f"Error connecting to database: {e}")
+            print(f"資料庫連線失敗 (Error connecting to database): {e}")
             raise
 
     def get_session(self):
         return self.Session()
 
     def bulk_upsert_daily_meta(self, records):
-        if not records:
-            return
-        
-        # Using raw SQL for ON DUPLICATE KEY UPDATE for performance
+        if not records: return
         stmt = text("""
             INSERT INTO daily_meta(symbol, trade_date, day_open, day_high, day_low, prev_close, limit_up, limit_down, short_name, full_name, exchange)
             VALUES (:symbol, :trade_date, :day_open, :day_high, :day_low, :prev_close, :limit_up, :limit_down, :short_name, :full_name, :exchange)
@@ -34,20 +31,16 @@ class Database:
                 full_name = VALUES(full_name),
                 exchange = VALUES(exchange);
         """)
-        session = self.get_session()
-        try:
-            session.execute(stmt, records)
-            session.commit()
-        except SQLAlchemyError as e:
-            print(f"Error in bulk_upsert_daily_meta: {e}")
-            session.rollback()
-        finally:
-            session.close()
+        with self.get_session() as session:
+            try:
+                session.execute(stmt, records)
+                session.commit()
+            except SQLAlchemyError as e:
+                print(f"Error in bulk_upsert_daily_meta: {e}")
+                session.rollback()
 
     def bulk_upsert_ticks(self, records):
-        if not records:
-            return
-
+        if not records: return
         stmt = text("""
             INSERT INTO ticks(symbol, ts_sec, price, vol, best_bid, best_ask)
             VALUES (:symbol, :ts_sec, :price, :vol, :best_bid, :best_ask)
@@ -57,12 +50,10 @@ class Database:
                 best_bid = VALUES(best_bid),
                 best_ask = VALUES(best_ask);
         """)
-        session = self.get_session()
-        try:
-            session.execute(stmt, records)
-            session.commit()
-        except SQLAlchemyError as e:
-            print(f"Error in bulk_upsert_ticks: {e}")
-            session.rollback()
-        finally:
-            session.close()
+        with self.get_session() as session:
+            try:
+                session.execute(stmt, records)
+                session.commit()
+            except SQLAlchemyError as e:
+                print(f"Error in bulk_upsert_ticks: {e}")
+                session.rollback()

@@ -67,14 +67,21 @@ class Poller:
         if meta_to_upsert: self.db.bulk_upsert_daily_meta(meta_to_upsert)
         if ticks_to_insert: self.db.bulk_upsert_ticks(ticks_to_insert)
         
-        # --- 收斂日誌：只處理第一個股票的資訊 ---
-        if data['msgArray']:
-            first_stock = data['msgArray'][0]
-            name = first_stock.get('n', 'N/A')
-            o = first_stock.get('o', '-')
-            h = first_stock.get('h', '-')
-            l = first_stock.get('l', '-')
-            z = first_stock.get('z', '-')
-            y = first_stock.get('y', '-')
+        # --- 收斂日誌：為每支股票分別顯示 ---
+        ts_str = datetime.now().strftime('%H:%M:%S')
+        for msg in data['msgArray']:
+            # 檢查此股票是否有產生 tick 資料
+            price, tlong = to_float(msg.get("z")), msg.get("tlong")
+            tick_count = 1 if price is not None and tlong else 0
+            
+            name = msg.get('n', 'N/A')
+            o = msg.get('o', '-')
+            h = msg.get('h', '-')
+            l = msg.get('l', '-')
+            z = msg.get('z', '-')
+            y = msg.get('y', '-')
+            
             summary_log = f"[{name}] 開:{o} 高:{h} 低:{l} 收:{z} (昨收:{y})"
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] {summary_log} | DB Write: {len(meta_to_upsert)} meta, {len(ticks_to_insert)} ticks.")
+            db_write_log = f"DB Write: 1 meta, {tick_count} ticks."
+            
+            print(f"[{ts_str}] {summary_log} | {db_write_log}")

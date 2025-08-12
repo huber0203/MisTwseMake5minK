@@ -5,6 +5,7 @@ import pandas as pd
 from datetime import datetime, time as dt_time
 from pytz import timezone
 from collections import deque
+from sqlalchemy import text  # 添加缺失的 text 導入
 from utils import to_float, first_px, get_today_date_str
 
 # --- 設定與常數 ---

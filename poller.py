@@ -64,6 +64,17 @@ class VshapeDetector:
     def _send_notification(self, symbol, name, p1, p2, p3):
         # *** 核心修改：在發送前，先呼叫 SummaryService 獲取最完整的即時資料 ***
         full_summary = self.summary_service.get_summary(symbol)
+        
+        def make_json_serializable(obj):
+            if isinstance(obj, (pd.Timestamp, datetime)):
+                return obj.strftime('%Y-%m-%d') if hasattr(obj, 'strftime') else str(obj)
+            elif hasattr(obj, 'item'):  # numpy types
+                return obj.item()
+            elif isinstance(obj, dict):
+                return {k: make_json_serializable(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [make_json_serializable(item) for item in obj]
+            return obj
 
         payload = {
             "v_shape_signal": {
@@ -72,7 +83,7 @@ class VshapeDetector:
                 "時間": f"{p1['ts']}-{p3['ts']}",
                 "價格": f"{p1['low']} > {p2['low']} > {p3['low']}",
             },
-            "full_summary": full_summary # 將完整的 summary 物件打包進 payload
+            "full_summary": make_json_serializable(full_summary)
         }
         try:
             res = requests.post(N8N_WEBHOOK_URL, json=payload, timeout=5)
@@ -182,6 +193,5 @@ class Poller:
             
             ticks_df = self._get_ticks_for_today(symbol)
             if not ticks_df.empty:
-                ohlc_df = ticks_df['price'].resample('5T').ohlc().dropna()
-                # *** 核心修改：不再傳遞 msg，因為偵測器會自己去拿最新資料 ***
+                ohlc_df = ticks_df['price'].resample('5min').ohlc().dropna()
                 self.v_shape_detector.check_and_notify(symbol, name, ohlc_df)

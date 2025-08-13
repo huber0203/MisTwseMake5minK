@@ -44,7 +44,7 @@ class SummaryService:
         meta_data = dict(meta_res._mapping) if meta_res else {}
 
         response = {
-            "查詢日期": meta_data.get("trade_date", "N/A"),
+            "查詢日期": str(meta_data.get("trade_date", "N/A")),
             "股票代號": meta_data.get("symbol"), "公司簡稱": meta_data.get("short_name"),
             "最新成交價": None, "當日開盤價": meta_data.get("day_open"),
             "當日最高價": meta_data.get("day_high"), "當日最低價": meta_data.get("day_low"),
@@ -60,19 +60,17 @@ class SummaryService:
         response["最新成交價"] = ticks_df['price'].iloc[-1]
         response["當日成交量"] = int(ticks_df['vol'].sum())
 
-        # --- 核心修改開始 ---
-
         # 1. 產生一個完整的 5 分鐘時間軸，從第一筆成交到最後一筆
-        start_time = ticks_df.index.min().floor('5T')
-        end_time = ticks_df.index.max().floor('5T')
-        full_time_index = pd.date_range(start=start_time, end=end_time, freq='5T')
+        start_time = ticks_df.index.min().floor('5min')
+        end_time = ticks_df.index.max().floor('5min')
+        full_time_index = pd.date_range(start=start_time, end=end_time, freq='5min')
 
         # 2. 重新取樣，並將其對齊到完整的時間軸上
-        ohlc_5m = ticks_df['price'].resample('5T').ohlc().reindex(full_time_index)
+        ohlc_5m = ticks_df['price'].resample('5min').ohlc().reindex(full_time_index)
         
         ticks_df['value'] = ticks_df['price'] * ticks_df['vol']
-        vol_5m = ticks_df['vol'].resample('5T').sum()
-        vwap_5m = (ticks_df['value'].resample('5T').sum() / vol_5m).reindex(full_time_index)
+        vol_5m = ticks_df['vol'].resample('5min').sum()
+        vwap_5m = (ticks_df['value'].resample('5min').sum() / vol_5m).reindex(full_time_index)
 
         def estimate_direction(row):
             if row['best_ask'] and row['price'] >= row['best_ask']: return 'B'
@@ -81,8 +79,8 @@ class SummaryService:
         
         ticks_df['direction'] = ticks_df.apply(estimate_direction, axis=1)
         # 對齊買賣量，空缺值填 0
-        buy_vol = ticks_df[ticks_df['direction'] == 'B']['vol'].resample('5T').sum().reindex(full_time_index, fill_value=0)
-        sell_vol = ticks_df[ticks_df['direction'] == 'S']['vol'].resample('5T').sum().reindex(full_time_index, fill_value=0)
+        buy_vol = ticks_df[ticks_df['direction'] == 'B']['vol'].resample('5min').sum().reindex(full_time_index, fill_value=0)
+        sell_vol = ticks_df[ticks_df['direction'] == 'S']['vol'].resample('5min').sum().reindex(full_time_index, fill_value=0)
         
         # 3. 迭代完整的時間軸，填補空缺
         last_close = meta_data.get("day_open") # 初始值設為開盤價
@@ -113,6 +111,4 @@ class SummaryService:
             if pd.notna(vwap_val):
                 response["均價"].append(f"{ts_str},{vwap_val:.2f}")
         
-        # --- 核心修改結束 ---
-
         return response

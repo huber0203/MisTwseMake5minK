@@ -184,7 +184,8 @@ class Poller:
         for msg in data['msgArray']:
             # 日誌輸出
             name = msg.get('n', 'N/A')
-            summary_log = f"[{name}] 開:{msg.get('o','-')} 高:{msg.get('h','-')} 低:{msg.get('l','-')} 收:{msg.get('z','-')} (昨收:{msg.get('y','-')})"
+            code = msg.get('c', 'N/A')
+            summary_log = f"[{name} {code}] 開:{msg.get('o','-')} 高:{msg.get('h','-')} 低:{msg.get('l','-')} 收:{msg.get('z','-')} (昨收:{msg.get('y','-')})"
             print(f"[{ts_str}] {summary_log}")
 
             # V轉偵測
